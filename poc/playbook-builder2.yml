@@ -1,0 +1,44 @@
+---
+- hosts: all
+  become: true
+  tasks:
+
+  - name: Clean Open vSwitch GIT repository
+    command: chdir=/var/www/html/debs/amd64/ovs/ git clean -xdf
+
+  - name: Reset Open vSwitch GIT repository
+    command: chdir=/var/www/html/debs/amd64/ovs/ git reset --hard
+
+  - name: Boot OVS
+    command: >
+            chdir=/var/www/html/debs/amd64/ovs/
+            ./boot.sh
+
+  - name: Configure
+    command: >
+            chdir=/var/www/html/debs/amd64/ovs/
+            ./configure
+
+
+  - name: Configure
+    command: >
+            chdir=/var/www/html/debs/amd64/ovs/
+            ./configure
+
+  - name: Build Open vSwitch {{full_version}} debian packages
+    shell: make -j 8 
+    args:
+       chdir: /var/www/html/debs/amd64/ovs/
+
+  - name: Create apt get directory server by Web Server
+    file: path=/var/www/html/debs/amd64 state=directory
+
+  - name: Set up Debian repository with Open vSwitch packages
+    shell: dpkg-scanpackages amd64 | gzip -9c > amd64/Packages.gz
+    args:
+       chdir: /var/www/html/debs
+
+  - name: Bump up Build Number
+    copy: >
+        content='{ "build_counter":"{{ansible_local.builder.build_counter|int+1}}" }'
+        dest="/etc/ansible/facts.d/builder.fact"

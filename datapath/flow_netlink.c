@@ -52,6 +52,7 @@
 #include "flow.h"
 #include "flow_netlink.h"
 #include "gso.h"
+#include "nfqueue.h"
 
 struct ovs_len_tbl {
 	int len;
@@ -2484,6 +2485,7 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 			[OVS_ACTION_ATTR_TRUNC] = sizeof(struct ovs_action_trunc),
 			[OVS_ACTION_ATTR_PUSH_ETH] = sizeof(struct ovs_action_push_eth),
 			[OVS_ACTION_ATTR_POP_ETH] = 0,
+			[OVS_ACTION_ATTR_NFQUEUE] = (u32)-1,
 		};
 		const struct ovs_action_push_vlan *vlan;
 		int type = nla_type(a);
@@ -2638,7 +2640,15 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 			mac_proto = MAC_PROTO_ETHERNET;
 			break;
 
+		case OVS_ACTION_ATTR_NFQUEUE:
+			err = ovs_nfqueue_copy_action(net, a, key, sfa, log);
+			if (err)
+				return err;
+			skip_copy = true;
+			break;
+
 		default:
+
 			OVS_NLERR(log, "Unknown Action type %d", type);
 			return -EINVAL;
 		}
@@ -2651,6 +2661,8 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 
 	if (rem > 0)
 		return -EINVAL;
+
+
 
 	return 0;
 }
@@ -2800,6 +2812,12 @@ int ovs_nla_put_actions(const struct nlattr *attr, int len, struct sk_buff *skb)
 
 		case OVS_ACTION_ATTR_CT:
 			err = ovs_ct_action_to_attr(nla_data(a), skb);
+			if (err)
+				return err;
+			break;
+
+		case OVS_ACTION_ATTR_NFQUEUE:
+			err = ovs_nfqueue_action_to_attr(nla_data(a), skb);
 			if (err)
 				return err;
 			break;

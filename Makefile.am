@@ -83,6 +83,11 @@ EXTRA_DIST = \
 	build-aux/sodepends.pl \
 	build-aux/soexpand.pl \
 	build-aux/xml2nroff \
+        poc/dpi/Vagrantfile \
+        poc/playbook-builder.yml \
+        poc/playbook-builder2.yml \
+        poc/playbook-dpi.yml \
+        poc/kernel-debug.yml \
 	$(MAN_FRAGMENTS) \
 	$(MAN_ROOTS) \
 	Vagrantfile \

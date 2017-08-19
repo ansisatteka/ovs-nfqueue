@@ -41,6 +41,7 @@
 #include "datapath.h"
 #include "conntrack.h"
 #include "gso.h"
+#include "nfqueue.h"
 #include "vport.h"
 
 static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
@@ -1220,6 +1221,11 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 		case OVS_ACTION_ATTR_POP_ETH:
 			err = pop_eth(skb, key);
+			break;
+
+		case OVS_ACTION_ATTR_NFQUEUE:
+			err = ovs_nfqueue_execute(ovs_dp_get_net(dp), skb,
+						  key, nla_data(a));
 			break;
 		}
 

@@ -128,6 +128,7 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_PUSH_ETH: return sizeof(struct ovs_action_push_eth);
     case OVS_ACTION_ATTR_POP_ETH: return 0;
     case OVS_ACTION_ATTR_CLONE: return ATTR_LEN_VARIABLE;
+    case OVS_ACTION_ATTR_NFQUEUE: return ATTR_LEN_VARIABLE;
 
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
@@ -174,6 +175,7 @@ ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
     case OVS_KEY_ATTR_DP_HASH: return "dp_hash";
     case OVS_KEY_ATTR_RECIRC_ID: return "recirc_id";
     case OVS_KEY_ATTR_PACKET_TYPE: return "packet_type";
+    case OVS_KEY_ATTR_NFQUEUE_ID: return "nfqueue_id";
 
     case __OVS_KEY_ATTR_MAX:
     default:
@@ -791,6 +793,34 @@ format_odp_conntrack_action(struct ds *ds, const struct nlattr *attr)
     }
 }
 
+static const struct nl_policy ovs_nfqueue_policy[] = {
+    [OVS_NFQUEUE_ATTR_QUEUE_ID] = { .type = NL_A_U16, .optional = true, },
+};
+
+static void
+format_odp_nfqueue_action(struct ds *ds, const struct nlattr *attr)
+{
+    struct nlattr *a[ARRAY_SIZE(ovs_nfqueue_policy)];
+    uint16_t id;
+
+    if (!nl_parse_nested(attr, ovs_nfqueue_policy, a, ARRAY_SIZE(a))) {
+        ds_put_cstr(ds, "nfqueue(error)");
+        return;
+    }
+
+    id = a[OVS_NFQUEUE_ATTR_QUEUE_ID] ? nl_attr_get_u16(a[OVS_NFQUEUE_ATTR_QUEUE_ID]) : 0;
+
+    ds_put_format(ds, "nfqueue");
+    if (id) {
+        ds_put_cstr(ds, "(");
+        if (id) {
+            ds_put_format(ds, "id=%"PRIu16",", id);
+        }
+        ds_chomp(ds, ',');
+        ds_put_cstr(ds, ")");
+    }
+}
+
 static void
 format_odp_action(struct ds *ds, const struct nlattr *a)
 {
@@ -907,6 +937,9 @@ format_odp_action(struct ds *ds, const struct nlattr *a)
         break;
     case OVS_ACTION_ATTR_CLONE:
         format_odp_clone_action(ds, a);
+        break;
+    case OVS_ACTION_ATTR_NFQUEUE:
+        format_odp_nfqueue_action(ds, a);
         break;
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
@@ -1626,6 +1659,47 @@ find_end:
 }
 
 static int
+parse_nfqueue_action(const char *s_, struct ofpbuf *actions)
+{
+    const char *s = s_;
+
+    if (ovs_scan(s, "nfqueue")) {
+        uint16_t queue = 0;
+        size_t start;
+        char *end;
+
+        s += 7;
+        if (ovs_scan(s, "(")) {
+            s++;
+            end = strchr(s, ')');
+            if (!end) {
+                return -EINVAL;
+            }
+
+            while (s != end) {
+                int n;
+
+                s += strspn(s, delimiters);
+                if (ovs_scan(s, "queue=%"SCNu16"%n", &queue, &n)) {
+                    s += n;
+                    continue;
+                }
+                /* Nothing matched. */
+                return -EINVAL;
+            }
+            s++;
+        }
+        start = nl_msg_start_nested(actions, OVS_ACTION_ATTR_NFQUEUE);
+        if (queue) {
+            nl_msg_put_u16(actions, OVS_NFQUEUE_ATTR_QUEUE_ID, queue);
+        }
+        nl_msg_end_nested(actions, start);
+    }
+
+    return s - s_;
+}
+
+static int
 parse_action_list(const char *s, const struct simap *port_names,
                   struct ofpbuf *actions)
 {
@@ -1652,6 +1726,7 @@ static int
 parse_odp_action(const char *s, const struct simap *port_names,
                  struct ofpbuf *actions)
 {
+
     {
         uint32_t port;
         int n;
@@ -1798,6 +1873,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
 
             actions_ofs = nl_msg_start_nested(actions,
                                               OVS_SAMPLE_ATTR_ACTIONS);
+
             int retval = parse_action_list(s + n, port_names, actions);
             if (retval < 0)
                 return retval;
@@ -1846,6 +1922,15 @@ parse_odp_action(const char *s, const struct simap *port_names,
     }
 
     {
+        int retval;
+
+        retval = parse_nfqueue_action(s, actions);
+        if (retval) {
+            return retval;
+        }
+    }
+
+    {
         struct ovs_action_push_tnl data;
         int n;
 
@@ -1857,6 +1942,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
             return n;
         }
     }
+
     return -EINVAL;
 }
 
@@ -1883,7 +1969,6 @@ odp_actions_from_string(const char *s, const struct simap *port_names,
         if (!*s) {
             return 0;
         }
-
         retval = parse_odp_action(s, port_names, actions);
         if (retval < 0 || !strchr(delimiters, s[retval])) {
             actions->size = old_size;
@@ -3120,6 +3205,14 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
         ds_chomp(ds, ',');
         break;
     }
+    case OVS_KEY_ATTR_NFQUEUE_ID:
+        if (verbose || !mask_empty(ma)) {
+            ds_put_format(ds, "%#"PRIx16, nl_attr_get_u16(a));
+            if (!is_exact) {
+                ds_put_format(ds, "/%#"PRIx16, nl_attr_get_u16(ma));
+            }
+        }
+        break;
     case OVS_KEY_ATTR_UNSPEC:
     case __OVS_KEY_ATTR_MAX:
     default:

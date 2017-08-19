@@ -4134,6 +4134,7 @@ xlate_fixup_actions(struct ofpbuf *b, const struct nlattr *actions,
         case OVS_ACTION_ATTR_PUSH_ETH:
         case OVS_ACTION_ATTR_POP_ETH:
         case OVS_ACTION_ATTR_METER:
+        case OVS_ACTION_ATTR_NFQUEUE:
             ofpbuf_put(b, a, nl_attr_len_pad(a, left));
             break;
 
@@ -5243,6 +5244,7 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_CT:
         case OFPACT_CT_CLEAR:
         case OFPACT_NAT:
+        case OFPACT_NFQUEUE:
             /* These may not generate PACKET INs. */
             break;
 
@@ -5428,6 +5430,29 @@ compose_conntrack_action(struct xlate_ctx *ctx, struct ofpact_conntrack *ofc)
 }
 
 static void
+compose_nfqueue_action(struct xlate_ctx *ctx, struct ofpact_nfqueue *ofn)
+{
+    size_t ct_offset;
+    uint16_t queue = 0;
+
+
+    /* Ensure that any prior actions are applied before composing the new
+     * conntrack action. */
+    //xlate_commit_actions(ctx);
+
+    /* Process nested actions first, to populate the key. */
+    //ctx->ct_nat_action = NULL;
+    //ctx->wc->masks.ct_mark = 0;
+    //ctx->wc->masks.ct_label.u64.hi = ctx->wc->masks.ct_label.u64.lo = 0;
+    //do_xlate_actions(ofc->actions, ofpact_ct_get_action_len(ofc), ctx);
+
+    ct_offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_NFQUEUE);
+    nl_msg_put_u16(ctx->odp_actions, OVS_NFQUEUE_ATTR_QUEUE_ID, queue);
+    nl_msg_end_nested(ctx->odp_actions, ct_offset);
+}
+
+
+static void
 recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
 {
     /* No need to recirculate if already exiting. */
@@ -5511,6 +5536,7 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_WRITE_ACTIONS:
     case OFPACT_WRITE_METADATA:
     case OFPACT_GOTO_TABLE:
+    case OFPACT_NFQUEUE:
     default:
         break;
     }
@@ -5927,6 +5953,10 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         case OFPACT_NAT:
             /* This will be processed by compose_conntrack_action(). */
             ctx->ct_nat_action = ofpact_get_NAT(a);
+            break;
+
+        case OFPACT_NFQUEUE:
+            compose_nfqueue_action(ctx, ofpact_get_NFQUEUE(a));
             break;
 
         case OFPACT_DEBUG_RECIRC:

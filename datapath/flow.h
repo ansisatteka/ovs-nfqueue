@@ -107,6 +107,7 @@ struct sw_flow_key {
 		__be16 dst;		/* TCP/UDP/SCTP destination port. */
 		__be16 flags;		/* TCP flags. */
 	} tp;
+	u16 nfqueue;			/* Netfilter Queue ID. */
 	union {
 		struct {
 			struct {

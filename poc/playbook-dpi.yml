@@ -1,0 +1,71 @@
+---
+- hosts: all
+  become: true
+  tasks:
+
+  - name: Add Builder host as repository
+    apt_repository:
+      repo: deb http://192.168.60.10/debs amd64/
+      state: present
+
+  - name: Update repositories cache
+    apt:
+      update_cache: yes
+
+  - name: Ensure that linux-headers are present for DKMS package
+    shell: apt install -y linux-headers-$(uname -r)
+
+  - name: Install Open vSwitch
+    apt:
+      name: openvswitch-switch
+      allow_unauthenticated: yes
+      state: latest
+
+  - name: Install Open vSwitch DKMS
+    apt:
+      name: openvswitch-datapath-dkms
+      allow_unauthenticated: yes
+      state: latest
+
+  - name: Ensure that Open vSwitch DKMS kernel module is loaded
+    shell: /etc/init.d/openvswitch-switch force-reload-kmod
+
+  - name: Install Suricata DPI engine
+    apt:
+      name: suricata
+
+  - name: Ensure that Suricata starts on init.d invocation
+    lineinfile: >
+      dest=/etc/default/suricata
+      state=present
+      regexp="^RUN="
+      line="RUN=yes"
+
+  - name: Ensure that Suricata is running and listening on NFQueue
+    service:
+      name: suricata
+      state: restarted
+
+  - name: Create physical bridge br-enp0s3
+    command: ovs-vsctl --may-exist add-br br-enp0s3
+
+  - name: Flush Flows
+    command: ovs-ofctl del-flows br-enp0s3
+
+  - name: Intercept packets with dest port 80
+    command: ovs-ofctl add-flow br-enp0s3 "ip,tcp,tp_dst=80 actions=NORMAL,nfqueue"
+
+  - name: Intercept packets with src port 80
+    command: ovs-ofctl add-flow br-enp0s3 "ip,tcp,tp_src=80 actions=NORMAL,nfqueue"
+
+  - name: Allow rest of traffic to go as regular
+    command: ovs-ofctl add-flow br-enp0s3 "actions=NORMAL"
+
+  - name: Update interfaces file
+    replace:
+      dest=/etc/network/interfaces
+      regexp=" enp0s3"
+      replace=" br-enp0s3"
+
+  - name: Move IP config to br-enp0s3
+    shell: ovs-vsctl add-port br-enp0s3 enp0s3; ip addr flush dev enp0s3; /etc/init.d/networking restart

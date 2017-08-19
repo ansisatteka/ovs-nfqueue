@@ -1,0 +1,10 @@
+---
+- hosts: all
+  become: true
+  tasks:
+
+  - name: Enable verbose logging
+    command: dmesg -n8
+
+  - name: Modprobe NetConsole kernel module
+    command: modprobe netconsole netconsole=@/enp0s8,20000@192.168.60.1/0a:00:27:00:00:00

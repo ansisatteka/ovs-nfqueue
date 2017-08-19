@@ -342,6 +342,9 @@ enum ofp_raw_action_type {
     /* NX1.0+(43): void. */
     NXAST_RAW_CT_CLEAR,
 
+    /* NX1.0+(46): struct nx_action_nfqueue. */
+    NXAST_RAW_NFQUEUE,
+
 /* ## ------------------ ## */
 /* ## Debugging actions. ## */
 /* ## ------------------ ## */
@@ -472,6 +475,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_WRITE_METADATA:
     case OFPACT_GOTO_TABLE:
     case OFPACT_NAT:
+    case OFPACT_NFQUEUE:
         return ofpact_next(ofpact);
 
     case OFPACT_CLONE:
@@ -1463,6 +1467,116 @@ format_BUNDLE(const struct ofpact_bundle *a,
     bundle_format(a, port_map, s);
 }
 
+
+/* Action structure for NXAST_NFQUEUE.
+ *
+ * This generalizes using OFPAT_NFQUEUE to send a packet to OFPP_NFQUEUE.  In
+ * addition to the 'max_len' that OFPAT_OUTPUT supports, it also allows
+ * specifying:
+ *
+ *    - 'reason': The reason code to use in the ofp_packet_in or nx_packet_in.
+ *
+ *    - 'controller_id': The ID of the controller connection to which the
+ *      ofp_packet_in should be sent.  The ofp_packet_in or nx_packet_in is
+ *      sent only to controllers that have the specified controller connection
+ *      ID.  See "struct nx_controller_id" for more information. */
+struct nx_action_nfqueue {
+    ovs_be16 type;                  /* OFPAT_VENDOR. */
+    ovs_be16 len;                   /* Length is 16. */
+    ovs_be32 vendor;                /* NX_VENDOR_ID. */
+    ovs_be16 subtype;               /* NXAST_NFQUEUE. */
+    ovs_be16 queue;                 /* NFQUEUE ID to send packet. */
+    ovs_be32 zero;
+};
+OFP_ASSERT(sizeof(struct nx_action_nfqueue) == 16);
+
+/* Properties for NXAST_NFQUEUE.
+ *
+ * For more information on the effect of NXAC2PT_PAUSE, see the large comment
+ * on NXT_PACKET_IN2 in nicira-ext.h */
+enum nx_action_nfqueue_prop_type {
+    NXAC2PT_NFQUEUE_QUEUE,      /* ovs_be16 dest controller ID (default 0). */
+};
+
+/* The action structure for NXAST_NFQUEUE is "struct ext_action_header",
+ * followed by NXAC2PT_* properties. */
+static enum ofperr
+decode_NXAST_RAW_NFQUEUE(const struct nx_action_nfqueue *nac,
+                         enum ofp_version ofp_version OVS_UNUSED,
+                         struct ofpbuf *out)
+{
+    struct ofpact_nfqueue *oc;
+
+    oc = ofpact_put_NFQUEUE(out);
+    oc->ofpact.raw = NXAST_RAW_NFQUEUE;
+    oc->queue = ntohs(nac->queue);
+    ofpact_finish_NFQUEUE(out, &oc);
+
+    return 0;
+}
+
+static void
+encode_NFQUEUE(const struct ofpact_nfqueue *nfqueue,
+                  enum ofp_version ofp_version OVS_UNUSED,
+                  struct ofpbuf *out)
+{
+        struct nx_action_nfqueue *naq;
+
+        naq = put_NXAST_NFQUEUE(out);
+        naq->queue = htons(nfqueue->queue);
+
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_NFQUEUE(char *arg,
+              const struct ofputil_port_map *port_map OVS_UNUSED,
+              struct ofpbuf *ofpacts,
+              enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    uint16_t queue = 0;
+
+    if (!arg[0]) {
+        /* Use defaults. */
+    } else {
+        char *name, *value;
+
+        while (ofputil_parse_key_value(&arg, &name, &value)) {
+            if (!strcmp(name, "queue")) {
+                char *error = str_to_u16(value, "queue", &queue);
+                if (error) {
+                    return error;
+                }
+            } else {
+                return xasprintf("unknown key \"%s\" parsing nfqueue "
+                                 "action", name);
+            }
+        }
+    }
+
+    struct ofpact_nfqueue *nfqueue;
+
+    nfqueue = ofpact_put_NFQUEUE(ofpacts);
+    nfqueue->queue = queue;
+
+    ofpact_finish_NFQUEUE(ofpacts, &nfqueue);
+
+    return NULL;
+}
+
+static void
+format_NFQUEUE(const struct ofpact_nfqueue *a,
+               const struct ofputil_port_map *port_map OVS_UNUSED,
+               struct ds *s)
+{
+    ds_put_format(s, "%snfqueue(%s", colors.paren, colors.end);
+    if (a->queue != 0) {
+        ds_put_format(s, "%squeue=%s%"PRIu16",",
+                      colors.param, colors.end, a->queue);
+    }
+    ds_chomp(s, ',');
+    ds_put_format(s, "%s)%s", colors.paren, colors.end);
+}
+
 /* Set VLAN actions. */
 
 static enum ofperr
@@ -6834,6 +6948,7 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
     case OFPACT_WRITE_ACTIONS:
     case OFPACT_WRITE_METADATA:
     case OFPACT_DEBUG_RECIRC:
+    case OFPACT_NFQUEUE:
         return false;
     default:
         OVS_NOT_REACHED();
@@ -6900,6 +7015,7 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
     case OFPACT_STACK_POP:
     case OFPACT_STACK_PUSH:
     case OFPACT_DEBUG_RECIRC:
+    case OFPACT_NFQUEUE:
 
     /* The action set may only include actions and thus
      * may not include any instructions */
@@ -7123,6 +7239,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
     case OFPACT_CT:
     case OFPACT_CT_CLEAR:
     case OFPACT_NAT:
+    case OFPACT_NFQUEUE:
     default:
         return OVSINST_OFPIT11_APPLY_ACTIONS;
     }
@@ -7502,6 +7619,9 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
     case OFPACT_OUTPUT:
         return ofpact_check_output_port(ofpact_get_OUTPUT(a)->port,
                                         max_ports);
+
+    case OFPACT_NFQUEUE:
+        return 0;
 
     case OFPACT_CONTROLLER:
         return 0;
@@ -8272,6 +8392,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_CT:
     case OFPACT_CT_CLEAR:
     case OFPACT_NAT:
+    case OFPACT_NFQUEUE:
     default:
         return false;
     }

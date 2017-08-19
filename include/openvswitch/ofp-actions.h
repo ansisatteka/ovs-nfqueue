@@ -62,6 +62,7 @@ struct vl_mff_map;
     OFPACT(ENQUEUE,         ofpact_enqueue,     ofpact, "enqueue")      \
     OFPACT(OUTPUT_REG,      ofpact_output_reg,  ofpact, "output_reg")   \
     OFPACT(BUNDLE,          ofpact_bundle,      slaves, "bundle")       \
+    OFPACT(NFQUEUE,         ofpact_nfqueue,     userdata, "nfqueue")    \
                                                                         \
     /* Header changes. */                                               \
     OFPACT(SET_FIELD,       ofpact_set_field,   ofpact, "set_field")    \
@@ -358,6 +359,17 @@ struct ofpact_bundle {
     /* Slaves for output. */
     unsigned int n_slaves;
     ofp_port_t slaves[];
+};
+
+/* OFPACT_NFQUEUE.
+ *
+ * Used for NXAST_NFQUEUE. */
+struct ofpact_nfqueue {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint16_t queue; /* NFQUEUE ID to send packet. */
+    );
+    uint8_t userdata[0];
 };
 
 /* OFPACT_SET_VLAN_VID.

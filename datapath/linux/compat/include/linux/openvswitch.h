@@ -366,6 +366,7 @@ enum ovs_key_attr {
 #endif
 
 	OVS_KEY_ATTR_PACKET_TYPE,  /* be32 packet type */
+	OVS_KEY_ATTR_NFQUEUE_ID,
 	__OVS_KEY_ATTR_MAX
 };
 
@@ -723,6 +724,18 @@ struct ovs_action_push_tnl {
 #endif
 
 /**
+ * enum ovs_ct_attr - Attributes for %OVS_ACTION_ATTR_NFQUEUE action.
+ * @OVS_NFQUEUE_ATTR_QUEUE_ID: u16 queue ID.
+ */
+enum ovs_nfqueue_attr {
+	OVS_NFQUEUE_ATTR_UNSPEC,
+	OVS_NFQUEUE_ATTR_QUEUE_ID,     /* u16 argument. */
+	__OVS_NFQUEUE_ATTR_MAX
+};
+
+#define OVS_NFQUEUE_ATTR_MAX (__OVS_NFQUEUE_ATTR_MAX - 1)
+
+/**
  * enum ovs_ct_attr - Attributes for %OVS_ACTION_ATTR_CT action.
  * @OVS_CT_ATTR_COMMIT: If present, commits the connection to the conntrack
  * table. This allows future packets for the same connection to be identified
@@ -888,6 +901,7 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_TRUNC,        /* u32 struct ovs_action_trunc. */
 	OVS_ACTION_ATTR_PUSH_ETH,     /* struct ovs_action_push_eth. */
 	OVS_ACTION_ATTR_POP_ETH,      /* No argument. */
+	OVS_ACTION_ATTR_NFQUEUE,       /* Nested OVS_NFQUEUE_ATTR_* . */
 
 #ifndef __KERNEL__
 	OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/
